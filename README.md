@@ -1,6 +1,6 @@
 # CPSC544-W25-Toxicity-Detector
 
-A machine learning project for detecting toxic comments in online platforms. This project focuses on feature engineering techniques to identify various forms of toxic content including hate speech, offensive language, threats, insults, and identity-based attacks.
+A machine learning project for detecting toxic comments in online platforms.
 
 ## Project Structure
 
