@@ -7,6 +7,7 @@ from scipy.stats import shapiro
 from sklearn.linear_model import ElasticNet
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.metrics import mean_squared_error
+from typing import Optional
 
 class Regularization:
     """
@@ -28,30 +29,36 @@ class Regularization:
             correlation_threshold (float): Absolute correlation threshold for filtering.
             random_state (int): Random seed for reproducibility.
         """
-        self.features_path = features_path
-        self.target_path = target_path
-        self.threshold_value = threshold_value
-        self.correlation_threshold = correlation_threshold
-        self.random_state = random_state
-        self.data = None
-        self.target = None
-        self.best_model = None
+        self.features_path: str = features_path
+        self.target_path: str = target_path
+        self.threshold_value: float = threshold_value
+        self.correlation_threshold: float = correlation_threshold
+        self.random_state: int = random_state
+        self.data: Optional[pd.DataFrame] = None
+        self.target: Optional[pd.Series] = None
+        self.best_model: Optional[ElasticNet] = None
         
         # Set up logging
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
         logging.info("Regularization class initialized.")
 
     def load_data(self):
-        """Load features and target data from CSV files."""
+        """Load features and target data from CSV files. 
+        TODO: Currently only loads targets wit toxic comments"""
         logging.info("Loading feature data from %s", self.features_path)
         self.data = pd.read_csv(self.features_path)
         logging.info("Loading target data from %s", self.target_path)
         targets = pd.read_csv(self.target_path)
         self.target = targets["toxic"]
         logging.info("Data loaded successfully. Features shape: %s, Target shape: %s", self.data.shape, self.target.shape)
+        print("Features shape:", self.data.shape)  # Debug: Print shape of features
+        print("Target shape:", self.target.shape)  # Debug: Print shape of targets
+
     
     def correlation_heatmap(self):
         """Compute the correlation matrix, filter it by a threshold, and display a heatmap."""
+        if self.data is None:
+            raise ValueError("Data is not loaded. Please call load_data() before running correlation_heatmap.")
         logging.info("Computing correlation matrix.")
         corr_matrix = self.data.corr()
         
@@ -72,6 +79,8 @@ class Regularization:
         Returns:
             dict: A dictionary with feature names as keys and test results as values.
         """
+        if self.data is None:
+            raise ValueError("Data is not loaded. Please call load_data() before running normality_tests.")
         logging.info("Performing normality tests on features using the Shapiro-Wilk test.")
         results = {}
         for feature in self.data.columns:
@@ -87,6 +96,8 @@ class Regularization:
     def plot_feature_distributions(self):
         """Plot the KDE distribution of each feature by target class."""
         logging.info("Plotting feature distributions with KDE by target class.")
+        if self.data is None:
+            raise ValueError("Data is not loaded. Please call load_data() before using plot_feature_distributions.")
         num_features = len(self.data.columns)
         cols = 5
         rows = int(np.ceil(num_features / cols))
@@ -116,6 +127,8 @@ class Regularization:
             tuple: (new_data, mse, best_alpha, best_l1_ratio)
         """
         logging.info("Starting feature selection using ElasticNet and GridSearchCV.")
+        if self.data is None:
+            raise ValueError("Data is not loaded. Please call load_data() before running feature_selection.")
         
         # Split data into training and testing sets
         X_train, X_test, y_train, y_test = train_test_split(self.data, self.target, test_size=0.2, random_state=self.random_state)
