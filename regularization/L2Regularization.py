@@ -44,7 +44,7 @@ class Regularization:
 
     def load_data(self):
         """Load features and target data from CSV files. 
-        TODO: Currently only loads targets wit toxic comments"""
+        TODO: Currently only loads targets with toxic comments"""
         logging.info("Loading feature data from %s", self.features_path)
         self.data = pd.read_csv(self.features_path)
         logging.info("Loading target data from %s", self.target_path)
