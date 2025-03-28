@@ -27,7 +27,7 @@ from sklearn.feature_selection import SelectKBest, chi2, f_classif, mutual_info_
 from sklearn.model_selection import train_test_split
 
 # Download NLTK resources
-nltk.download(['punkt', 'stopwords', 'wordnet', 'averaged_perceptron_tagger', 'vader_lexicon'], quiet=True)
+nltk.download(['punkt', 'punkt_tab', 'stopwords', 'wordnet', 'averaged_perceptron_tagger', 'vader_lexicon'], quiet=True)
 
 class ToxicFeatureExtractor:
     """Comprehensive feature extraction for toxic comment classification."""
