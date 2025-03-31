@@ -27,7 +27,7 @@ from sklearn.feature_selection import SelectKBest, chi2, f_classif, mutual_info_
 from sklearn.model_selection import train_test_split
 
 # Download NLTK resources
-nltk.download(['punkt', 'stopwords', 'wordnet', 'averaged_perceptron_tagger', 'vader_lexicon'], quiet=True)
+nltk.download(['punkt_tab', 'stopwords', 'wordnet', 'averaged_perceptron_tagger_eng', 'vader_lexicon'], quiet=True)
 
 class ToxicFeatureExtractor:
     """Comprehensive feature extraction for toxic comment classification."""
@@ -627,72 +627,52 @@ class ToxicFeatureExtractor:
         
         return combined
 
-    # WIP (Have not tested this much yet, will update when needed)
     def transform_new_data(self, texts: List[str], verbose: bool = False, **kwargs):
         """
-        Transform new data using previously fitted feature extraction pipeline.
-        Use this for inference on new texts after training a model.
-
-        Args:
-            texts: List of text samples to transform
-            verbose: Whether to print progress information
-            **kwargs: Additional parameters to control feature extraction
-
-        Returns:
-            np.ndarray: Feature matrix for the new texts
+        Transform new data using the same feature extraction pipeline as during training.
+        This updated method ensures that all feature types (TF-IDF, word2vec, doc2vec,
+        fasttext, lexical, POS, sentiment, readability, topic) are included.
         """
         if verbose:
             print(f"Transforming {len(texts)} new texts...")
 
-        # Check that necessary models have been fitted
-        if self.vectorizer is None:
-            raise ValueError("Feature extraction models not fitted. Call extract_all_features first.")
-
-        # Use the same feature extraction settings as used during training
-        # This should match the features used during model training
-        extracted_features = []
-
         # Preprocess texts
         preprocessed = [self.preprocess_text(t, verbose=False, **kwargs) for t in texts]
+        extracted_features = []
 
-        # Extract the same set of features as during training
-        # TF-IDF Features (if vectorizer was fitted)
+        # TF-IDF features (using the fitted vectorizer)
         if self.vectorizer is not None:
             if verbose:
                 print("Applying TF-IDF vectorization...")
             tfidf_features = self.vectorizer.transform(preprocessed)
             extracted_features.append(tfidf_features)
+        
+        # Word2Vec features
+        if verbose:
+            print("Extracting Word2Vec features...")
+        word2vec_features = self.extract_word2vec(preprocessed, verbose=verbose, preprocessed=True, model_params=self.word2vec_params)
+        extracted_features.append(word2vec_features)
 
-        # Word2Vec features (if model was fitted)
-        if self.word2vec_model is not None:
-            if verbose:
-                print("Extracting Word2Vec features...")
-            vector_size = self.word2vec_model.vector_size
-            word2vec_features = np.array([
-                np.mean([self.word2vec_model.wv[w] for w in text.split()
-                         if w in self.word2vec_model.wv] or [np.zeros(vector_size)], axis=0)
-                for text in preprocessed
-            ])
-            extracted_features.append(word2vec_features)
+        # Doc2Vec features
+        if verbose:
+            print("Extracting Doc2Vec features...")
+        doc2vec_features = self.extract_doc2vec(preprocessed, verbose=verbose, preprocessed=True, model_params=self.doc2vec_params)
+        extracted_features.append(doc2vec_features)
+        
+        # FastText features
+        if verbose:
+            print("Extracting FastText features...")
+        fasttext_features = self.extract_fasttext(preprocessed, verbose=verbose, preprocessed=True, model_params=self.fasttext_params)
+        extracted_features.append(fasttext_features)
 
-        # Doc2Vec features (if model was fitted)
-        if self.doc2vec_model is not None:
-            if verbose:
-                print("Extracting Doc2Vec features...")
-            doc2vec_features = np.array([
-                self.doc2vec_model.infer_vector(text.split())
-                for text in preprocessed
-            ])
-            extracted_features.append(doc2vec_features)
-
-        # LDA topic features (if model was fitted)
+        # LDA topic features (if fitted)
         if self.lda_model is not None and self.vectorizer is not None:
             if verbose:
                 print("Extracting topic features...")
             X = self.vectorizer.transform(preprocessed)
             topic_features = self.lda_model.transform(X)
             extracted_features.append(topic_features)
-
+        
         # Always include these feature types as they don't require fitting
         if kwargs.get('include_lexical', True):
             lexical_features = self.extract_lexical_features(texts, verbose=verbose)
@@ -710,7 +690,7 @@ class ToxicFeatureExtractor:
             readability_features = self.extract_readability_features(texts, verbose=verbose)
             extracted_features.append(readability_features)
 
-        # Combine all features
+        # Combine all features ensuring the order and number of columns match training
         combined_features = np.hstack([
             f.toarray() if not isinstance(f, np.ndarray) else f
             for f in extracted_features
@@ -719,10 +699,11 @@ class ToxicFeatureExtractor:
         # Apply feature selection if it was used during training
         if self.feature_selector is not None:
             if verbose:
-                print(f"Applying feature selection...")
+                print("Applying feature selection...")
             combined_features = self.feature_selector.transform(combined_features)
 
         if verbose:
             print(f"Transformation complete. Output matrix shape: {combined_features.shape}")
 
         return combined_features
+
