@@ -115,32 +115,45 @@ class Regularization:
         plt.tight_layout()
         plt.show()
         logging.info("Feature distribution plots generated.")
-    
-    def feature_selection(self):
+
+    def feature_selection(self, sample_fraction=1.0):
         """
         Perform feature selection using ElasticNet with GridSearchCV.
-        
+
         Splits the data, searches for the best hyperparameters, evaluates performance,
         and culls features with near-zero coefficients.
-        
+
         Returns:
             tuple: (new_data, mse, best_alpha, best_l1_ratio)
         """
         logging.info("Starting feature selection using ElasticNet and GridSearchCV.")
         if self.data is None:
             raise ValueError("Data is not loaded. Please call load_data() before running feature_selection.")
-        
+
+        # Subsample the data for faster processing
+        if sample_fraction < 1.0:
+            data_sample, _, target_sample, _ = train_test_split(
+                self.data, self.target,
+                train_size=sample_fraction,
+                random_state=self.random_state,
+                stratify=self.target
+            )
+            logging.info(
+                f"Using {sample_fraction * 100:.1f}% of data ({len(data_sample)} samples) for feature selection")
+        else:
+            data_sample, target_sample = self.data, self.target
+
         # Split data into training and testing sets
-        X_train, X_test, y_train, y_test = train_test_split(self.data, self.target, test_size=0.2, random_state=self.random_state)
+        X_train, X_test, y_train, y_test = train_test_split(data_sample, target_sample, test_size=0.2, random_state=self.random_state)
         logging.info("Data split into training and testing sets.")
-        
+
         # Define the parameter grid for hyperparameter tuning
         param_grid = {
             'alpha': [0.01, 0.1, 1, 10, 100],
             'l1_ratio': [0.1, 0.5, 0.7, 1.0]
         }
         logging.info("Parameter grid: %s", param_grid)
-        
+
         # Initialize the ElasticNet model and grid search
         elasticnet = ElasticNet(max_iter=10000, random_state=self.random_state)
         grid_search = GridSearchCV(estimator=elasticnet, param_grid=param_grid,
@@ -148,24 +161,24 @@ class Regularization:
                                    verbose=1, n_jobs=-1)
         grid_search.fit(X_train, y_train)
         logging.info("Grid search completed.")
-        
+
         best_alpha = grid_search.best_params_['alpha']
         best_l1_ratio = grid_search.best_params_['l1_ratio']
         self.best_model = grid_search.best_estimator_
         logging.info("Best parameters found: alpha=%s, l1_ratio=%s", best_alpha, best_l1_ratio)
-        
+
         # Evaluate the best model on the test set
         y_pred = self.best_model.predict(X_test)
         mse = mean_squared_error(y_test, y_pred)
         logging.info("Test MSE: %s", mse)
         logging.info("Best model coefficients: %s", self.best_model.coef_)
-        
+
         # Cull features whose coefficients are below the threshold value
         cull_mask = np.abs(self.best_model.coef_) < self.threshold_value
         logging.info("Culling features with coefficient absolute value below %s", self.threshold_value)
         new_data = self.data.loc[:, ~cull_mask]
         logging.info("Features before culling: %d, after culling: %d", self.data.shape[1], new_data.shape[1])
-        
+
         return new_data, mse, best_alpha, best_l1_ratio
     
     def run_all(self):
