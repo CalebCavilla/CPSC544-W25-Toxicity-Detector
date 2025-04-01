@@ -11,6 +11,8 @@ CPSC544-W25-Toxicity-Detector/
 │   └── toxic_feature_extractor.py  # Main feature extraction class
 ├── examples/                       # Example code
 │   └── demo_all_features.py        # Demo showing feature extraction capabilities
+├── models_test/                    # Model testing and development
+│   └── extract_full_features.py    # Feature extraction for model training
 ├── notebooks/                      # Jupyter notebooks for analysis and visualization (if we decide to use notebooks in the future)
 ├── requirements.txt                # Project dependencies [Dont upload your own requirements.txt until we check that there are no version mismatch]
 └── README.md                       # Project documentation
@@ -216,3 +218,14 @@ Set `verbose=True` to get detailed information about the extraction process, whi
 ### Output
 
 The function returns a numpy array containing all the selected features combined. The shape of the output matrix will be `(n_samples, n_features)`, where `n_samples` is the number of texts, and `n_features` is the total number of extracted features.
+
+## Model Training
+
+### Stacking Classifier Approach (Evaluated and Discontinued)
+
+We initially explored using a stacking classifier approach for toxic comment detection:
+   - The single Random Forest and Gradient Boosting models outperformed the stacking classifier
+   - Stacking introduced additional computational overhead without performance benefits
+   - Individual models offered better interpretability with similar or better accuracy
+   
+Based on these results, we decided to focus on optimizing individual models (particularly Random Forest and Gradient Boosting) rather than pursuing the stacking approach further.
