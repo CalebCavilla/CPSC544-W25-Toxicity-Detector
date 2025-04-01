@@ -124,15 +124,12 @@ def main():
         feature_df.to_csv(features_output, index=False)
         print(f"Features saved. Shape: {feature_df.shape}")
         
-        # Optionally save feature type information
-        if hasattr(extractor, 'feature_ranges') and extractor.feature_ranges:
-            feature_info_path = project_root / "data" / "feature_info.pkl"
-            with open(feature_info_path, 'wb') as f:
-                pickle.dump({
-                    'feature_ranges': extractor.feature_ranges,
-                    'feature_info': extractor.feature_info
-                }, f)
-            print(f"Feature metadata saved to {feature_info_path}")
+        # Save the extractor state for later inference
+        extractor_path = project_root / "data" / "extractor_state.pkl"
+        print(f"Saving extractor state to {extractor_path}")
+        with open(extractor_path, 'wb') as f:
+            pickle.dump(extractor, f)
+        print("Extractor state saved successfully")
 
 if __name__ == "__main__":
     main()
