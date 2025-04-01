@@ -1,8 +1,8 @@
 import sys
 from pathlib import Path
 import os
-
 import pandas as pd
+import pickle
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -83,8 +83,8 @@ def main():
             # Show results
             print(f"\nCombined feature matrix shape: {features.shape}")
 
-            # Save raw features
-            feature_df = pd.DataFrame(features)
+            # features are already in a DataFrame with named columns if using updated extractor
+            feature_df = features
         except Exception as e:
             print(f"Error during feature extraction: {str(e)}")
             import traceback
@@ -123,6 +123,16 @@ def main():
         print(f"Saving features to {features_output}")
         feature_df.to_csv(features_output, index=False)
         print(f"Features saved. Shape: {feature_df.shape}")
+        
+        # Optionally save feature type information
+        if hasattr(extractor, 'feature_ranges') and extractor.feature_ranges:
+            feature_info_path = project_root / "data" / "feature_info.pkl"
+            with open(feature_info_path, 'wb') as f:
+                pickle.dump({
+                    'feature_ranges': extractor.feature_ranges,
+                    'feature_info': extractor.feature_info
+                }, f)
+            print(f"Feature metadata saved to {feature_info_path}")
 
 if __name__ == "__main__":
     main()
