@@ -81,7 +81,7 @@ Feature importance analysis shows that TF-IDF features and sentiment scores cont
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/CPSC544-W25-Toxicity-Detector.git
+git clone https://github.com/CalebCavilla/CPSC544-W25-Toxicity-Detector.git
 cd CPSC544-W25-Toxicity-Detector
 
 # Create a virtual environment (optional but recommended)
