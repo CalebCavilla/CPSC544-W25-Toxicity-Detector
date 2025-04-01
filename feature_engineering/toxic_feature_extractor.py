@@ -1,16 +1,14 @@
 import re
 import string
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 # NLP libraries
 import nltk
 import numpy as np
 import pandas as pd
-
 # Readability metrics
 import textstat
-
 # Large models
 from gensim.models import Word2Vec, Doc2Vec, FastText
 from gensim.models.doc2vec import TaggedDocument
@@ -19,7 +17,6 @@ from nltk.sentiment import SentimentIntensityAnalyzer
 from nltk.stem import PorterStemmer, WordNetLemmatizer
 from nltk.tag import pos_tag
 from nltk.tokenize import word_tokenize
-
 # Scikit-learn
 from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
@@ -103,6 +100,8 @@ class ToxicFeatureExtractor:
         self.doc2vec_model = None
         self.lda_model = None
         self.feature_names = None
+        self.feature_ranges = None  # To store feature column ranges
+        self.feature_info = None    # To store detailed feature metadata
 
     # DATA LOADING AND PREPROCESSING
     def load_data(self, dataset: str = 'train', verbose: bool = False) -> pd.DataFrame:
@@ -533,7 +532,7 @@ class ToxicFeatureExtractor:
         return X_new
 
     # USE THIS METHOD TO GET FEATURES YOU WANT
-    def extract_all_features(self, texts: List[str], verbose: bool = False, **kwargs) -> np.ndarray:
+    def extract_all_features(self, texts: List[str], verbose: bool = False, **kwargs) -> Union[np.ndarray, pd.DataFrame]:
         """Extract and combine all specified features."""
         if verbose:
             print(f"Beginning feature extraction for {len(texts)} texts...")
@@ -586,6 +585,9 @@ class ToxicFeatureExtractor:
         feature_info = {}
         
         # Extract selected features
+        feature_ranges = {}  # To track feature column ranges
+        start_idx = 0
+        
         for name, (func, params) in feature_extractors.items():
             if kwargs.get(f'include_{name}', True):
                 try:
@@ -600,9 +602,14 @@ class ToxicFeatureExtractor:
                     features.append(feature_matrix)
                     
                     # Store feature metadata
+                    end_idx = start_idx + feature_matrix.shape[1]
+                    feature_ranges[name] = (start_idx, end_idx, feature_matrix.shape[1])
+                    start_idx = end_idx
+                    
                     feature_info[name] = {
                         'shape': feature_matrix.shape,
                         'sample': feature_matrix[0, :min(5, feature_matrix.shape[1])],
+                        'range': (feature_ranges[name][0], feature_ranges[name][1])
                     }
                     
                     if verbose:
@@ -625,9 +632,28 @@ class ToxicFeatureExtractor:
             for name, info in feature_info.items():
                 print(f"  {name}: {info['shape']}")
         
-        return combined
+        # Create named DataFrame
+        # Generated column names with feature type prefixes
+        column_names = []
+        for name, (start, end, size) in feature_ranges.items():
+            # Create feature names with prefixes
+            col_names = [f"{name.upper()}_{i+1}" for i in range(size)]
+            column_names.extend(col_names)
+        
+        # Save feature ranges for later reference
+        self.feature_ranges = feature_ranges
+        self.feature_info = feature_info
+            
+        # Convert to DataFrame with named columns
+        if kwargs.get('return_dataframe', True):
+            result_df = pd.DataFrame(combined, columns=column_names)
+            if verbose:
+                print(f"Created DataFrame with named columns. Example columns: {column_names[:5]}...")
+            return result_df
+        else:
+            return combined
 
-    def transform_new_data(self, texts: List[str], verbose: bool = False, **kwargs):
+    def transform_new_data(self, texts: List[str], verbose: bool = False, **kwargs) -> Union[np.ndarray, pd.DataFrame]:
         """
         Transform new data using the same feature extraction pipeline as during training.
         This updated method ensures that all feature types (TF-IDF, word2vec, doc2vec,
@@ -705,5 +731,17 @@ class ToxicFeatureExtractor:
         if verbose:
             print(f"Transformation complete. Output matrix shape: {combined_features.shape}")
 
-        return combined_features
+        # If we previously created feature ranges, use them to name columns
+        if hasattr(self, 'feature_ranges') and kwargs.get('return_dataframe', True):
+            column_names = []
+            for name, (start, end, size) in self.feature_ranges.items():
+                col_names = [f"{name.upper()}_{i+1}" for i in range(size)]
+                column_names.extend(col_names)
+                
+            result_df = pd.DataFrame(combined_features, columns=column_names)
+            if verbose:
+                print(f"Created DataFrame with named columns. Example columns: {column_names[:5]}...")
+            return result_df
+        else:
+            return combined_features
 

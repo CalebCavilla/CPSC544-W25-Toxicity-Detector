@@ -1,3 +1,5 @@
+# TODO: This file has errors (not sure what the demo is supposed to be doing)
+
 import sys
 from pathlib import Path
 import logging
