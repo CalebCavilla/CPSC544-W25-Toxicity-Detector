@@ -10,7 +10,7 @@ project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 # Configuration
-SAVE_PATH = project_root / "models_test" / "saved_models"
+SAVE_PATH = project_root / "model" / "saved_models"
 
 def load_models_and_metrics():
     """Load saved models and their evaluation metrics."""

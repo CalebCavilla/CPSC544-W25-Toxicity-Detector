@@ -24,7 +24,7 @@ DEBUG_MODE = False    # Set to True for reduced parameter search
 SAMPLE_FRACTION = 0.5 if USE_FULL_DATA else 0.1  # Use 50% of data for full training, 10% for testing
 N_JOBS = -1          # Use all available cores
 RANDOM_STATE = 42    # For reproducibility
-SAVE_PATH = project_root / "models_test" / "saved_models"
+SAVE_PATH = project_root / "model" / "saved_models"
 
 # Create the save directory if it doesn't exist
 os.makedirs(SAVE_PATH, exist_ok=True)
