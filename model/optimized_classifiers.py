@@ -7,7 +7,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
-from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
+from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
 from sklearn.metrics import classification_report, confusion_matrix, f1_score, roc_auc_score, accuracy_score
 from sklearn.naive_bayes import MultinomialNB
@@ -19,9 +19,8 @@ project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 # Configuration
-USE_FULL_DATA = True  # Set to False for faster testing
 DEBUG_MODE = False    # Set to True for reduced parameter search 
-SAMPLE_FRACTION = 0.5 if USE_FULL_DATA else 0.1  # Use 50% of data for full training, 10% for testing
+SAMPLE_FRACTION = 0.1  # Fraction of data to use (0.0-1.0)
 N_JOBS = -1          # Use all available cores
 RANDOM_STATE = 42    # For reproducibility
 SAVE_PATH = project_root / "model" / "saved_models"
