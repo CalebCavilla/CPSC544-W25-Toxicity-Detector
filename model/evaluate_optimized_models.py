@@ -1,9 +1,11 @@
 import sys
 from pathlib import Path
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
+from sklearn.metrics import classification_report, f1_score, precision_recall_curve, auc, roc_curve
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -11,6 +13,7 @@ sys.path.append(str(project_root))
 
 # Configuration
 SAVE_PATH = project_root / "model" / "saved_models"
+
 
 def load_models_and_metrics():
     """Load saved models and their evaluation metrics."""
@@ -55,6 +58,7 @@ def load_models_and_metrics():
     
     return models, all_metrics
 
+
 def plot_evaluation_results(metrics):
     """Plot evaluation results for all models."""
     if not metrics:
@@ -97,6 +101,7 @@ def plot_evaluation_results(metrics):
     plt.show()
     plot_confusion_matrices(metrics)
 
+
 def plot_confusion_matrices(metrics):
     """Plot confusion matrices for all models."""
     if not metrics:
@@ -137,10 +142,62 @@ def plot_confusion_matrices(metrics):
     plt.savefig(SAVE_PATH / "confusion_matrices.png", dpi=300, bbox_inches='tight')
     plt.show()
 
-def demo_model_usage():
-    """Demonstrate how to use the best model for prediction."""
-    print("\n=== Model Usage Demo ===")
-    
+
+def optimize_threshold(model, X_test, y_test):
+    """Find optimal threshold to maximize F1 score."""
+    # Get probability predictions
+    try:
+        y_probs = model.predict_proba(X_test)[:, 1]
+
+        # Calculate precision, recall, and F1 for different thresholds
+        precisions, recalls, thresholds = precision_recall_curve(y_test, y_probs)
+
+        # Calculate F1 scores for each threshold
+        f1_scores = 2 * (precisions * recalls) / (precisions + recalls + 1e-9)
+
+        # Find threshold with max F1
+        optimal_idx = np.argmax(f1_scores)
+        optimal_threshold = thresholds[optimal_idx] if optimal_idx < len(thresholds) else 0.5
+
+        # Plot precision-recall curve
+        plt.figure(figsize=(10, 6))
+        plt.plot(recalls, precisions, 'b-', label='Precision-Recall curve')
+        plt.plot(recalls[optimal_idx], precisions[optimal_idx], 'ro',
+                 label=f'Optimal threshold: {optimal_threshold:.3f}, F1: {f1_scores[optimal_idx]:.3f}')
+        plt.xlabel('Recall')
+        plt.ylabel('Precision')
+        plt.title('Precision-Recall Curve - Threshold Optimization')
+        plt.legend(loc='best')
+        plt.grid(True)
+        plt.savefig(SAVE_PATH / "threshold_optimization.png", dpi=300, bbox_inches='tight')
+        plt.show()
+
+        # Plot ROC curve
+        fpr, tpr, _ = roc_curve(y_test, y_probs)
+        roc_auc = auc(fpr, tpr)
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(fpr, tpr, 'b-', label=f'ROC curve (AUC = {roc_auc:.3f})')
+        plt.plot([0, 1], [0, 1], 'k--')
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('ROC Curve')
+        plt.legend(loc='best')
+        plt.grid(True)
+        plt.savefig(SAVE_PATH / "roc_curve.png", dpi=300, bbox_inches='tight')
+        plt.show()
+
+        return optimal_threshold, f1_scores[optimal_idx]
+
+    except Exception as e:
+        print(f"Error optimizing threshold: {e}")
+        return 0.5, None
+
+
+def demo_model_usage(threshold=0.5):
+    """Demonstrate how to use the best model for prediction with adjustable threshold."""
+    print(f"\n=== Model Usage Demo (Threshold: {threshold:.3f}) ===")
+
     # Load models and metrics
     models, metrics = load_models_and_metrics()
     if not models or not metrics:
@@ -192,9 +249,10 @@ def demo_model_usage():
             else:
                 display_text = text
 
-            prediction = best_model.predict(features)[0]
+            # Get probability and apply custom threshold
             probability = best_model.predict_proba(features)[0][1]
-            
+            prediction = 1 if probability >= threshold else 0
+
             # Get true label
             actual_label = df_train.iloc[idx]['toxic']
 
@@ -211,7 +269,82 @@ def demo_model_usage():
     
     print("\nModel usage demo complete.")
 
-def main():
+
+def threshold_evaluation(model, X_test, y_test):
+    """Evaluate model performance across different thresholds."""
+    try:
+        y_probs = model.predict_proba(X_test)[:, 1]
+
+        thresholds = np.arange(0.1, 0.7, 0.05)
+        results = []
+
+        for threshold in thresholds:
+            y_pred = (y_probs >= threshold).astype(int)
+            f1 = f1_score(y_test, y_pred)
+
+            # Calculate metrics
+            tn = np.sum((y_test == 0) & (y_pred == 0))
+            fp = np.sum((y_test == 0) & (y_pred == 1))
+            fn = np.sum((y_test == 1) & (y_pred == 0))
+            tp = np.sum((y_test == 1) & (y_pred == 1))
+
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+            recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+
+            results.append({
+                'threshold': threshold,
+                'f1': f1,
+                'precision': precision,
+                'recall': recall,
+                'false_positives': fp,
+                'false_negatives': fn
+            })
+
+        # Convert to DataFrame for plotting
+        df = pd.DataFrame(results)
+
+        # Plot metrics vs threshold
+        plt.figure(figsize=(12, 6))
+        plt.plot(df['threshold'], df['f1'], 'b-', marker='o', label='F1 Score')
+        plt.plot(df['threshold'], df['precision'], 'g-', marker='s', label='Precision')
+        plt.plot(df['threshold'], df['recall'], 'r-', marker='^', label='Recall')
+        plt.xlabel('Threshold')
+        plt.ylabel('Score')
+        plt.title('Performance Metrics vs Classification Threshold')
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(SAVE_PATH / "threshold_metrics.png", dpi=300, bbox_inches='tight')
+        plt.show()
+
+        # Plot false positives and negatives
+        plt.figure(figsize=(12, 6))
+        plt.plot(df['threshold'], df['false_positives'], 'r-', marker='o', label='False Positives')
+        plt.plot(df['threshold'], df['false_negatives'], 'b-', marker='s', label='False Negatives')
+        plt.xlabel('Threshold')
+        plt.ylabel('Count')
+        plt.title('Error Types vs Classification Threshold')
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(SAVE_PATH / "threshold_errors.png", dpi=300, bbox_inches='tight')
+        plt.show()
+
+        # Print optimal threshold for different metrics
+        max_f1_idx = df['f1'].idxmax()
+        balance_idx = np.abs(df['false_positives'] - df['false_negatives']).idxmin()
+
+        print(
+            f"Optimal threshold for F1 score: {df.iloc[max_f1_idx]['threshold']:.3f} (F1: {df.iloc[max_f1_idx]['f1']:.3f})")
+        print(f"Threshold for balanced errors: {df.iloc[balance_idx]['threshold']:.3f}")
+        print(f"Threshold for minimizing false negatives: {df['threshold'].min():.3f}")
+
+        return df
+
+    except Exception as e:
+        print(f"Error in threshold evaluation: {e}")
+        return None
+
+
+def main(custom_threshold=None):
     """Main function for evaluating optimized models."""
     print("=== Optimized Model Evaluation ===")
     
@@ -223,9 +356,48 @@ def main():
     # Plot evaluation results
     print("\nPlotting evaluation results...")
     plot_evaluation_results(metrics)
-    
-    # Demonstrate model usage
-    demo_model_usage()
+
+    # Find best model
+    best_model_name = max(metrics.items(), key=lambda x: x[1]['f1'])[0]
+    best_model = models.get(best_model_name)
+
+    # Load test data for threshold optimization
+    features_path = project_root / "data" / "features_train.csv"
+    target_path = project_root / "data" / "train.csv"
+
+    if features_path.exists() and target_path.exists():
+        try:
+            print("\nLoading test data for threshold optimization...")
+            X_test = pd.read_csv(features_path, nrows=5000)
+            y_df = pd.read_csv(target_path, nrows=5000)
+            y_test = y_df['toxic']
+
+            print("\nEvaluating model performance across different thresholds...")
+            threshold_df = threshold_evaluation(best_model, X_test, y_test)
+
+            print("\nFinding optimal threshold...")
+            optimal_threshold, _ = optimize_threshold(best_model, X_test, y_test)
+
+            # Use custom threshold if provided, otherwise use the optimized one
+            threshold = custom_threshold if custom_threshold is not None else optimal_threshold
+
+            # Demo with optimal threshold
+            demo_model_usage(threshold=threshold)
+        except Exception as e:
+            print(f"Error during threshold optimization: {e}")
+            # Fall back to default threshold
+            demo_model_usage()
+    else:
+        # Use default threshold if data isn't available
+        demo_model_usage()
+
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Evaluate toxicity detection models')
+    parser.add_argument('--threshold', type=float, default=None,
+                        help='Custom classification threshold (default: auto-optimize)')
+    args = parser.parse_args()
+
+    main(custom_threshold=args.threshold)
