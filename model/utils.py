@@ -1,8 +1,10 @@
 # Utility file for training models and stuff
 import numpy as np
+import pandas as pd
 from scipy.stats import uniform, loguniform, randint
 from sklearn.metrics import f1_score
 from sklearn.linear_model import LogisticRegression
+from sklearn.decomposition import PCA, LatentDirichletAllocation
 from imblearn.over_sampling import SMOTE, ADASYN, BorderlineSMOTE
 from imblearn.combine import SMOTETomek
 
@@ -119,6 +121,24 @@ def evaluate_smote_methods(X_train, y_train, X_test, y_test, random_state=RANDOM
     print(f"\nBest method: {best_method} with F1: {results[best_method]['f1_score']:.4f}")
 
     return results, best_method
+
+
+def apply_dimensionality_reduction(X_train, X_test, method='pca', n_components=None):
+    """Apply dimensionality reduction to features"""
+    if n_components is None:
+        n_components = min(100, X_train.shape[1] // 2)
+
+    if method == 'pca':
+        reducer = PCA(n_components=n_components, random_state=RANDOM_STATE)
+    elif method == 'lda':
+        reducer = LatentDirichletAllocation(n_components=n_components, random_state=RANDOM_STATE)
+    else:
+        raise ValueError(f"Unknown dimensionality reduction method: {method}")
+
+    X_train_reduced = reducer.fit_transform(X_train)
+    X_test_reduced = reducer.transform(X_test)
+
+    return X_train_reduced, X_test_reduced, reducer
 
 
 def create_stacking_ensemble(base_models, meta_learner=None, cv=5, n_jobs=-1):
