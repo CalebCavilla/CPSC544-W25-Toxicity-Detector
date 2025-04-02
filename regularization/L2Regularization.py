@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from scipy.stats import shapiro
+from scipy.stats import normaltest
 from sklearn.linear_model import ElasticNet
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.metrics import mean_squared_error
@@ -18,7 +18,7 @@ class Regularization:
     model (with grid search) for feature selection by culling near-zero coefficients.
     """
     
-    def __init__(self, features_path, target_path, threshold_value=0.01, correlation_threshold=0.4, random_state=42):
+    def __init__(self, features_path, target_path, threshold_value=0.01, correlation_threshold=0.4, random_state=42, TARGET="toxic"):
         """
         Initialize the Regularization class.
         
@@ -37,6 +37,7 @@ class Regularization:
         self.data: Optional[pd.DataFrame] = None
         self.target: Optional[pd.Series] = None
         self.best_model: Optional[ElasticNet] = None
+        self.TARGET = TARGET
         
         # Set up logging
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -49,7 +50,10 @@ class Regularization:
         self.data = pd.read_csv(self.features_path)
         logging.info("Loading target data from %s", self.target_path)
         targets = pd.read_csv(self.target_path)
-        self.target = targets["toxic"]
+        if self.TARGET not in targets.columns:
+            print(f"Err: set target [{self.TARGET}] not in targets from file [{self.target}]. Aborting... ")
+            exit()
+        self.target = targets[self.TARGET]
         logging.info("Data loaded successfully. Features shape: %s, Target shape: %s", self.data.shape, self.target.shape)
         print("Features shape:", self.data.shape)  # Debug: Print shape of features
         print("Target shape:", self.target.shape)  # Debug: Print shape of targets
@@ -74,17 +78,17 @@ class Regularization:
     
     def normality_tests(self):
         """
-        Perform Shapiro-Wilk normality tests on all features.
+        Perform normality tests on all features.
         
         Returns:
             dict: A dictionary with feature names as keys and test results as values.
         """
         if self.data is None:
             raise ValueError("Data is not loaded. Please call load_data() before running normality_tests.")
-        logging.info("Performing normality tests on features using the Shapiro-Wilk test.")
+        logging.info("Performing normality tests on features using the normal test.")
         results = {}
         for feature in self.data.columns:
-            stat, p = shapiro(self.data[feature])
+            stat, p = normaltest(self.data[feature])
             if p > 0.05:
                 result = "normally distributed"
             else:
@@ -105,7 +109,7 @@ class Regularization:
         axes = axes.flatten()
         
         for i, feature in enumerate(self.data.columns):
-            sns.kdeplot(data=self.data, x=feature, hue=self.target, common_norm=False, ax=axes[i])
+            sns.kdeplot(data=self.data, x=feature, hue=self.target, common_norm=False, ax=axes[i], warn_singular=False)
             axes[i].set_title(f"Distribution of {feature}")
         
         # Remove any extra axes
@@ -155,7 +159,7 @@ class Regularization:
         logging.info("Parameter grid: %s", param_grid)
 
         # Initialize the ElasticNet model and grid search
-        elasticnet = ElasticNet(max_iter=10000, random_state=self.random_state)
+        elasticnet = ElasticNet(max_iter=100, random_state=self.random_state)
         grid_search = GridSearchCV(estimator=elasticnet, param_grid=param_grid,
                                    cv=5, scoring='neg_mean_squared_error',
                                    verbose=1, n_jobs=-1)
@@ -190,9 +194,9 @@ class Regularization:
         """
         logging.info("Running the full regularization pipeline.")
         self.load_data()
-        self.correlation_heatmap()
-        self.normality_tests()
-        self.plot_feature_distributions()
+        # self.correlation_heatmap()
+        # self.normality_tests()
+        # self.plot_feature_distributions()
         new_data, mse, best_alpha, best_l1_ratio = self.feature_selection()
         logging.info("Regularization and feature selection pipeline completed.")
         return new_data, mse, best_alpha, best_l1_ratio
