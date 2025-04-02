@@ -7,48 +7,61 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
-from sklearn.model_selection import train_test_split, StratifiedKFold
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
+from imblearn.over_sampling import SMOTE
+from sklearn.ensemble import (
+    RandomForestClassifier, GradientBoostingClassifier, VotingClassifier,
+    AdaBoostClassifier, ExtraTreesClassifier
+)
+from sklearn.svm import SVC
 from sklearn.metrics import classification_report, confusion_matrix, f1_score, roc_auc_score, accuracy_score
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.experimental import enable_halving_search_cv
-from sklearn.model_selection import HalvingRandomSearchCV
+from sklearn.model_selection import HalvingRandomSearchCV, train_test_split, StratifiedKFold
+from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
+# Import utilities
+from model.utils import (
+    rf_param_dist, gb_param_dist, nb_param_dist, svm_param_dist,
+    xgb_param_dist, lgbm_param_dist, et_param_dist, ada_param_dist,
+    evaluate_smote_methods, apply_dimensionality_reduction,
+    create_stacking_ensemble, create_weighted_voting_ensemble,
+    RANDOM_STATE
+)
+
 # Configuration
-DEBUG_MODE = False    # Set to True for reduced parameter search 
+DEBUG_MODE = False  # Set to True for reduced parameter search
 SAMPLE_FRACTION = 0.1  # Fraction of data to use (0.0-1.0)
-N_JOBS = -1          # Use all available cores
-RANDOM_STATE = 42    # For reproducibility
+N_JOBS = -1  # Use all available cores
 SAVE_PATH = project_root / "model" / "saved_models"
 
 # Create the save directory if it doesn't exist
 os.makedirs(SAVE_PATH, exist_ok=True)
 
+
 class OptimizedClassifierTrainer:
     """Class to train and optimize classifiers for toxic comment detection."""
-    
-    def __init__(self, sample_fraction=SAMPLE_FRACTION, debug_mode=DEBUG_MODE, n_jobs=N_JOBS, random_state=RANDOM_STATE):
-        """
-        Init method.
 
-        Args:
-            sample_fraction: Fraction of data to use (0.0-1.0)
-            debug_mode: If True, use smaller parameter spaces for faster testing
-            n_jobs: Number of CPU cores to use (-1 for all)
-            random_state: Random seed for reproducibility
-        """
+    def __init__(self, sample_fraction=SAMPLE_FRACTION, debug_mode=DEBUG_MODE, n_jobs=N_JOBS, random_state=RANDOM_STATE,
+                 resampling_method=None, dim_reduction=None):
+        """Init method."""
         self.sample_fraction = sample_fraction
         self.debug_mode = debug_mode
         self.n_jobs = n_jobs
         self.random_state = random_state
+        self.resampling_method = resampling_method
+        self.dim_reduction = dim_reduction
         self.models = {}
         self.feature_importances = {}
         self.results = {}
-    
+        self.validation_scores = {}
+        self.resampler = None
+        self.reducer = None
+
     def load_data(self, features_path=None, target_path=None):
         """
         Load feature and target data.
@@ -116,9 +129,35 @@ class OptimizedClassifierTrainer:
         print(f"Train set: {X_train.shape}, Test set: {X_test.shape}")
         print(f"Class distribution in train set: {pd.Series(y_train).value_counts().to_dict()}")
         print(f"Class distribution in test set: {pd.Series(y_test).value_counts().to_dict()}")
-        
+
         return X_train, X_test, y_train, y_test
-    
+
+    def preprocess_data(self, X_train, X_test, y_train, y_test):
+        """Apply preprocessing steps: dimensionality reduction and resampling."""
+        # Apply dimensionality reduction if specified
+        if self.dim_reduction:
+            print(f"\nApplying {self.dim_reduction} dimensionality reduction...")
+            X_train, X_test, self.reducer = apply_dimensionality_reduction(
+                X_train, X_test, method=self.dim_reduction
+            )
+
+        # Determine best resampling method if not specified
+        if self.resampling_method is None:
+            print("\nEvaluating resampling methods...")
+            _, best_method = evaluate_smote_methods(X_train, y_train, X_test, y_test, self.random_state)
+            self.resampling_method = best_method
+
+        # Apply resampling to training data if a method is specified and it's not 'original'
+        if self.resampling_method and self.resampling_method != 'original':
+            print(f"\nApplying {self.resampling_method} resampling...")
+            self.resampler = SMOTE(random_state=self.random_state)
+            X_train, y_train = self.resampler.fit_resample(X_train, y_train)
+
+            print(f"After resampling - Train set: {X_train.shape}")
+            print(f"Class distribution in resampled train set: {pd.Series(y_train).value_counts().to_dict()}")
+
+        return X_train, X_test, y_train, y_test
+
     def optimize_random_forest(self, X_train, y_train):
         """
         Optimize a Random Forest classifier using HalvingRandomSearchCV.
@@ -132,8 +171,8 @@ class OptimizedClassifierTrainer:
         """
         print("\nOptimizing Random Forest...")
         start_time = time.time()
-        
-        # Define parameter space
+
+        # Create parameter distribution - use simplified for debug mode
         if self.debug_mode:
             param_dist = {
                 'n_estimators': [50, 100],
@@ -142,28 +181,20 @@ class OptimizedClassifierTrainer:
                 'min_samples_leaf': [1, 2],
                 'max_features': ['sqrt'],
                 'bootstrap': [True],
-                'class_weight': ['balanced', 'balanced_subsample', None]
+                'class_weight': ['balanced', None]
             }
         else:
-            param_dist = {
-                'n_estimators': [50, 100, 200, 300],
-                'max_depth': [None, 10, 20, 30, 40],
-                'min_samples_split': [2, 5, 10],
-                'min_samples_leaf': [1, 2, 4],
-                'max_features': ['sqrt', 'log2', None],
-                'bootstrap': [True, False],
-                'class_weight': ['balanced', 'balanced_subsample', None]
-            }
-        
+            param_dist = rf_param_dist
+
         base_rf = RandomForestClassifier(random_state=self.random_state)
 
         # Make sure there are enough samples
         min_samples = max(1000, int(len(y_train) * 0.1))  # At least 1000 samples or 10% of data
-        
+
         halving_search = HalvingRandomSearchCV(
             base_rf,
             param_distributions=param_dist,
-            factor=3,           # Reduce candidates by a factor of 3 at each iteration
+            factor=3,  # Reduce candidates by a factor of 3 at each iteration
             resource='n_samples',  # Use fraction of samples for efficiency
             min_resources=min_samples,  # Start with enough samples for reliable CV
             max_resources='auto',  # Automatically determine max resources
@@ -177,18 +208,19 @@ class OptimizedClassifierTrainer:
         halving_search.fit(X_train, y_train)
         best_rf = halving_search.best_estimator_
         elapsed_time = time.time() - start_time
-        
+
         print(f"\nRandom Forest optimization completed in {elapsed_time:.2f} seconds")
         print(f"Best parameters: {halving_search.best_params_}")
         print(f"Best F1 score: {halving_search.best_score_:.4f}")
-        
+
         self.models['random_forest'] = best_rf
+        self.validation_scores['random_forest'] = halving_search.best_score_
 
         if hasattr(best_rf, 'feature_importances_'):
             self.feature_importances['random_forest'] = best_rf.feature_importances_
-        
+
         return best_rf
-    
+
     def optimize_gradient_boosting(self, X_train, y_train):
         """
         Optimize a Gradient Boosting classifier using HalvingRandomSearchCV.
@@ -214,26 +246,18 @@ class OptimizedClassifierTrainer:
                 'max_features': ['sqrt']
             }
         else:
-            param_dist = {
-                'n_estimators': [50, 100, 200, 300],
-                'learning_rate': [0.01, 0.05, 0.1, 0.2],
-                'max_depth': [3, 5, 7, 9],
-                'min_samples_split': [2, 5, 10],
-                'min_samples_leaf': [1, 2, 4],
-                'subsample': [0.7, 0.8, 0.9, 1.0],
-                'max_features': ['sqrt', 'log2', None]
-            }
-        
+            param_dist = gb_param_dist
+
         base_gb = GradientBoostingClassifier(random_state=self.random_state)
         min_samples = max(1000, int(len(y_train) * 0.1))
-        
+
         halving_search = HalvingRandomSearchCV(
             base_gb,
             param_distributions=param_dist,
-            factor=3,           # Reduce candidates by a factor of 3 at each iteration
-            resource='n_samples',  # Use fraction of samples for efficiency
-            min_resources=min_samples,  # Start with enough samples for reliable CV
-            max_resources='auto',  # Automatically determine max resources
+            factor=3,
+            resource='n_samples',
+            min_resources=min_samples,
+            max_resources='auto',
             cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state),
             n_jobs=self.n_jobs,
             random_state=self.random_state,
@@ -250,6 +274,7 @@ class OptimizedClassifierTrainer:
         print(f"Best F1 score: {halving_search.best_score_:.4f}")
         
         self.models['gradient_boosting'] = best_gb
+        self.validation_scores['gradient_boosting'] = halving_search.best_score_
 
         if hasattr(best_gb, 'feature_importances_'):
             self.feature_importances['gradient_boosting'] = best_gb.feature_importances_
@@ -269,26 +294,23 @@ class OptimizedClassifierTrainer:
         """
         print("\nOptimizing Multinomial Naive Bayes...")
         start_time = time.time()
-        
-        # Negative values -> 0
+
+        # Ensure no negative values for Naive Bayes (cheap workaround)
         X_train_nb = X_train.copy()
         X_train_nb[X_train_nb < 0] = 0
 
-        param_dist = {
-            'alpha': np.logspace(-3, 1, 10),
-            'fit_prior': [True, False]
-        }
-        
+        param_dist = nb_param_dist
+
         base_nb = MultinomialNB()
-        min_samples = max(1000, int(len(y_train) * 0.1))  # At least 1000 samples or 10% of data
-        
+        min_samples = max(1000, int(len(y_train) * 0.1))
+
         halving_search = HalvingRandomSearchCV(
             base_nb,
             param_distributions=param_dist,
-            factor=3,           # Reduce candidates by a factor of 3 at each iteration
-            resource='n_samples',  # Use fraction of samples for efficiency
-            min_resources=min_samples,  # Start with enough samples for reliable CV
-            max_resources='auto',  # Automatically determine max resources
+            factor=3,
+            resource='n_samples',
+            min_resources=min_samples,
+            max_resources='auto',
             cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state),
             n_jobs=self.n_jobs,
             random_state=self.random_state,
@@ -305,54 +327,332 @@ class OptimizedClassifierTrainer:
         print(f"Best F1 score: {halving_search.best_score_:.4f}")
         
         self.models['naive_bayes'] = best_nb
-        
+        self.validation_scores['naive_bayes'] = halving_search.best_score_
+
         return best_nb
-    
-    def create_voting_classifier(self):
+
+    def optimize_svm(self, X_train, y_train):
         """
-        Create a voting classifier from optimized models.
-        
+        Optimize an SVM classifier using HalvingRandomSearchCV.
+
+        Args:
+            X_train: Training feature matrix
+            y_train: Training target vector
+
         Returns:
-            Voting classifier
+            Optimized SVM classifier
         """
+        print("\nOptimizing SVM...")
+        start_time = time.time()
+
+        if self.debug_mode:
+            param_dist = {
+                'C': [0.1, 1.0, 10.0],
+                'gamma': ['scale', 'auto'],
+                'kernel': ['linear', 'rbf'],
+                'probability': [True],
+                'class_weight': ['balanced', None]
+            }
+        else:
+            param_dist = svm_param_dist
+
+        base_svm = SVC(random_state=self.random_state)
+        min_samples = max(1000, int(len(y_train) * 0.1))
+
+        halving_search = HalvingRandomSearchCV(
+            base_svm,
+            param_distributions=param_dist,
+            factor=3,
+            resource='n_samples',
+            min_resources=min_samples,
+            max_resources='auto',
+            cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state),
+            n_jobs=self.n_jobs,
+            random_state=self.random_state,
+            verbose=1,
+            scoring='f1'
+        )
+
+        halving_search.fit(X_train, y_train)
+        best_svm = halving_search.best_estimator_
+        elapsed_time = time.time() - start_time
+
+        print(f"\nSVM optimization completed in {elapsed_time:.2f} seconds")
+        print(f"Best parameters: {halving_search.best_params_}")
+        print(f"Best F1 score: {halving_search.best_score_:.4f}")
+
+        self.models['svm'] = best_svm
+        self.validation_scores['svm'] = halving_search.best_score_
+
+        return best_svm
+
+    def optimize_xgboost(self, X_train, y_train):
+        """
+        Optimize an XGBoost classifier using HalvingRandomSearchCV.
+
+        Args:
+            X_train: Training feature matrix
+            y_train: Training target vector
+
+        Returns:
+            Optimized XGBoost classifier
+        """
+        print("\nOptimizing XGBoost...")
+        start_time = time.time()
+
+        if self.debug_mode:
+            param_dist = {
+                'n_estimators': [50, 100],
+                'max_depth': [3, 6, 9],
+                'learning_rate': [0.01, 0.1],
+                'subsample': [0.8, 1.0],
+                'colsample_bytree': [0.8, 1.0],
+                'gamma': [0, 1]
+            }
+        else:
+            param_dist = xgb_param_dist
+
+        base_xgb = XGBClassifier(random_state=self.random_state)
+        min_samples = max(1000, int(len(y_train) * 0.1))
+
+        halving_search = HalvingRandomSearchCV(
+            base_xgb,
+            param_distributions=param_dist,
+            factor=3,
+            resource='n_samples',
+            min_resources=min_samples,
+            max_resources='auto',
+            cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state),
+            n_jobs=self.n_jobs,
+            random_state=self.random_state,
+            verbose=1,
+            scoring='f1'
+        )
+
+        halving_search.fit(X_train, y_train)
+        best_xgb = halving_search.best_estimator_
+        elapsed_time = time.time() - start_time
+
+        print(f"\nXGBoost optimization completed in {elapsed_time:.2f} seconds")
+        print(f"Best parameters: {halving_search.best_params_}")
+        print(f"Best F1 score: {halving_search.best_score_:.4f}")
+
+        self.models['xgboost'] = best_xgb
+        self.validation_scores['xgboost'] = halving_search.best_score_
+
+        if hasattr(best_xgb, 'feature_importances_'):
+            self.feature_importances['xgboost'] = best_xgb.feature_importances_
+
+        return best_xgb
+
+    def optimize_lightgbm(self, X_train, y_train):
+        """
+        Optimize a LightGBM classifier using HalvingRandomSearchCV.
+
+        Args:
+            X_train: Training feature matrix
+            y_train: Training target vector
+
+        Returns:
+            Optimized LightGBM classifier
+        """
+        print("\nOptimizing LightGBM...")
+        start_time = time.time()
+
+        if self.debug_mode:
+            param_dist = {
+                'n_estimators': [50, 100],
+                'max_depth': [3, 6, 9],
+                'learning_rate': [0.01, 0.1],
+                'subsample': [0.8, 1.0],
+                'colsample_bytree': [0.8, 1.0],
+                'num_leaves': [31, 63, 127]
+            }
+        else:
+            param_dist = lgbm_param_dist
+
+        base_lgbm = LGBMClassifier(random_state=self.random_state)
+        min_samples = max(1000, int(len(y_train) * 0.1))
+
+        halving_search = HalvingRandomSearchCV(
+            base_lgbm,
+            param_distributions=param_dist,
+            factor=3,
+            resource='n_samples',
+            min_resources=min_samples,
+            max_resources='auto',
+            cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state),
+            n_jobs=self.n_jobs,
+            random_state=self.random_state,
+            verbose=1,
+            scoring='f1'
+        )
+
+        halving_search.fit(X_train, y_train)
+        best_lgbm = halving_search.best_estimator_
+        elapsed_time = time.time() - start_time
+
+        print(f"\nLightGBM optimization completed in {elapsed_time:.2f} seconds")
+        print(f"Best parameters: {halving_search.best_params_}")
+        print(f"Best F1 score: {halving_search.best_score_:.4f}")
+
+        self.models['lightgbm'] = best_lgbm
+        self.validation_scores['lightgbm'] = halving_search.best_score_
+
+        if hasattr(best_lgbm, 'feature_importances_'):
+            self.feature_importances['lightgbm'] = best_lgbm.feature_importances_
+
+        return best_lgbm
+
+    def optimize_extra_trees(self, X_train, y_train):
+        """
+        Optimize an Extra Trees classifier using HalvingRandomSearchCV.
+
+        Args:
+            X_train: Training feature matrix
+            y_train: Training target vector
+
+        Returns:
+            Optimized Extra Trees classifier
+        """
+        print("\nOptimizing Extra Trees...")
+        start_time = time.time()
+
+        if self.debug_mode:
+            param_dist = {
+                'n_estimators': [50, 100],
+                'max_depth': [None, 10, 20],
+                'min_samples_split': [2, 5],
+                'min_samples_leaf': [1, 2],
+                'max_features': ['sqrt'],
+                'bootstrap': [True],
+                'class_weight': ['balanced', None]
+            }
+        else:
+            param_dist = et_param_dist
+
+        base_et = ExtraTreesClassifier(random_state=self.random_state)
+        min_samples = max(1000, int(len(y_train) * 0.1))
+
+        halving_search = HalvingRandomSearchCV(
+            base_et,
+            param_distributions=param_dist,
+            factor=3,
+            resource='n_samples',
+            min_resources=min_samples,
+            max_resources='auto',
+            cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state),
+            n_jobs=self.n_jobs,
+            random_state=self.random_state,
+            verbose=1,
+            scoring='f1'
+        )
+
+        halving_search.fit(X_train, y_train)
+        best_et = halving_search.best_estimator_
+        elapsed_time = time.time() - start_time
+
+        print(f"\nExtra Trees optimization completed in {elapsed_time:.2f} seconds")
+        print(f"Best parameters: {halving_search.best_params_}")
+        print(f"Best F1 score: {halving_search.best_score_:.4f}")
+
+        self.models['extra_trees'] = best_et
+        self.validation_scores['extra_trees'] = halving_search.best_score_
+
+        if hasattr(best_et, 'feature_importances_'):
+            self.feature_importances['extra_trees'] = best_et.feature_importances_
+
+        return best_et
+
+    def optimize_adaboost(self, X_train, y_train):
+        """
+        Optimize an AdaBoost classifier using HalvingRandomSearchCV.
+
+        Args:
+            X_train: Training feature matrix
+            y_train: Training target vector
+
+        Returns:
+            Optimized AdaBoost classifier
+        """
+        print("\nOptimizing AdaBoost...")
+        start_time = time.time()
+
+        if self.debug_mode:
+            param_dist = {
+                'n_estimators': [50, 100],
+                'learning_rate': [0.01, 0.1, 1.0],
+                'algorithm': ['SAMME', 'SAMME.R']
+            }
+        else:
+            param_dist = ada_param_dist
+
+        base_ada = AdaBoostClassifier(random_state=self.random_state)
+        min_samples = max(1000, int(len(y_train) * 0.1))
+
+        halving_search = HalvingRandomSearchCV(
+            base_ada,
+            param_distributions=param_dist,
+            factor=3,
+            resource='n_samples',
+            min_resources=min_samples,
+            max_resources='auto',
+            cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state),
+            n_jobs=self.n_jobs,
+            random_state=self.random_state,
+            verbose=1,
+            scoring='f1'
+        )
+
+        halving_search.fit(X_train, y_train)
+        best_ada = halving_search.best_estimator_
+        elapsed_time = time.time() - start_time
+
+        print(f"\nAdaBoost optimization completed in {elapsed_time:.2f} seconds")
+        print(f"Best parameters: {halving_search.best_params_}")
+        print(f"Best F1 score: {halving_search.best_score_:.4f}")
+
+        self.models['adaboost'] = best_ada
+        self.validation_scores['adaboost'] = halving_search.best_score_
+
+        if hasattr(best_ada, 'feature_importances_'):
+            self.feature_importances['adaboost'] = best_ada.feature_importances_
+
+        return best_ada
+
+    def create_voting_classifier(self):
+        """Create a voting classifier from optimized models."""
         if len(self.models) < 2:
             raise ValueError("At least two optimized models are required to create a voting classifier")
-        
+
         print("\nCreating Voting Classifier...")
-        
-        # Dont use naive bayes since it gives error for some reason
-        filtered_models = {name: model for name, model in self.models.items() 
-                          if 'naive_bayes' not in name}
+
+        # Handle Naive Bayes separately - don't include in voting classifier because of negative values
+        has_naive_bayes = 'naive_bayes' in self.models
+        nb_model = self.models.pop('naive_bayes') if has_naive_bayes else None
 
         # Create a list of tuples (name, model) for the voting classifier
-        estimators = [(name, model) for name, model in filtered_models.items()]
+        estimators = [(name, model) for name, model in self.models.items()]
 
         voting_clf = VotingClassifier(
             estimators=estimators,
             voting='soft',
             n_jobs=self.n_jobs
         )
-        
+
+        # Add Naive Bayes back to models if it was present
+        if has_naive_bayes:
+            self.models['naive_bayes'] = nb_model
+
         print(f"Voting Classifier created with models: {[name for name, _ in estimators]}")
-        
+
         return voting_clf
-    
+
     def evaluate_model(self, model, X_test, y_test, model_name='model'):
-        """
-        Evaluate a model on test data.
-        
-        Args:
-            model: Trained model to evaluate
-            X_test: Test feature matrix
-            y_test: Test target vector
-            model_name: Name of the model for reporting
-            
-        Returns:
-            Dictionary of evaluation metrics
-        """
+        """Evaluate a model on test data."""
         print(f"\nEvaluating {model_name}...")
-        
-        # Handle Naive Bayes
+
+        # Handle Naive Bayes - ensure no negative values
         if model_name == 'naive_bayes':
             X_test_eval = X_test.copy()
             X_test_eval[X_test_eval < 0] = 0
@@ -411,8 +711,9 @@ class OptimizedClassifierTrainer:
                 cbar=False,
                 ax=ax
             )
-            
-            ax.set_title(f"{model_name.replace('_', ' ').title()}\nAccuracy: {metrics['accuracy']:.4f}, F1: {metrics['f1']:.4f}")
+
+            ax.set_title(
+                f"{model_name.replace('_', ' ').title()}\nAccuracy: {metrics['accuracy']:.4f}, F1: {metrics['f1']:.4f}")
             ax.set_xlabel('Predicted')
             ax.set_ylabel('True')
             ax.set_xticklabels(['Not Toxic', 'Toxic'])
@@ -556,33 +857,85 @@ class OptimizedClassifierTrainer:
         print(f"Saved all evaluation results to {all_results_path}")
         
         print("Model saving complete.")
-    
-    def train_and_evaluate(self):
+
+    def train_and_evaluate(self, models_to_train=None):
         """Complete pipeline for training and evaluating models."""
+        # Available models
+        all_models = {
+            'random_forest': self.optimize_random_forest,
+            'gradient_boosting': self.optimize_gradient_boosting,
+            'naive_bayes': self.optimize_multinomial_nb,
+            'svm': self.optimize_svm,
+            'xgboost': self.optimize_xgboost,
+            'lightgbm': self.optimize_lightgbm,
+            'extra_trees': self.optimize_extra_trees,
+            'adaboost': self.optimize_adaboost
+        }
+
+        # Determine which models to train
+        if models_to_train is None:
+            # Train all models by default
+            models_to_train = list(all_models.keys())
+
         # Load data
         X, y = self.load_data()
         
         # Split data
         X_train, X_test, y_train, y_test = self.split_data(X, y)
-        
-        # Optimize and evaluate Random Forest
-        rf_model = self.optimize_random_forest(X_train, y_train)
-        self.evaluate_model(rf_model, X_test, y_test, 'random_forest')
-        
-        # Optimize and evaluate Gradient Boosting
-        gb_model = self.optimize_gradient_boosting(X_train, y_train)
-        self.evaluate_model(gb_model, X_test, y_test, 'gradient_boosting')
-        
-        # Optimize and evaluate Naive Bayes
-        nb_model = self.optimize_multinomial_nb(X_train, y_train)
-        self.evaluate_model(nb_model, X_test, y_test, 'naive_bayes')
-        
-        # Create and evaluate voting classifier
-        voting_clf = self.create_voting_classifier()
-        voting_clf.fit(X_train, y_train)
-        self.models['voting'] = voting_clf
-        self.evaluate_model(voting_clf, X_test, y_test, 'voting')
-        
+
+        # Preprocess data: dimensionality reduction and resampling
+        X_train, X_test, y_train, y_test = self.preprocess_data(X_train, X_test, y_train, y_test)
+
+        # Train selected models
+        for model_name in models_to_train:
+            if model_name in all_models:
+                try:
+                    print(f"\nTraining {model_name}...")
+                    model_trainer = all_models[model_name]
+
+                    # Handle Naive Bayes separately (replace negatives with zeros)
+                    if model_name == 'naive_bayes':
+                        X_train_nb = X_train.copy()
+                        X_train_nb[X_train_nb < 0] = 0
+                        model = model_trainer(X_train_nb, y_train)
+                    else:
+                        model = model_trainer(X_train, y_train)
+
+                    # Evaluate the model
+                    self.evaluate_model(model, X_test, y_test, model_name)
+                except Exception as e:
+                    print(f"Error training {model_name}: {e}")
+            else:
+                print(f"Warning: Model {model_name} not recognized. Skipping.")
+
+        # Create and evaluate ensemble classifiers
+        if len(self.models) >= 2:
+            try:
+                # Standard voting classifier
+                voting_clf = self.create_voting_classifier()
+                voting_clf.fit(X_train, y_train)
+                self.models['voting'] = voting_clf
+                self.evaluate_model(voting_clf, X_test, y_test, 'voting')
+
+                # Weighted voting classifier based on validation scores
+                if len(self.validation_scores) >= 2:
+                    weighted_voting_clf = create_weighted_voting_ensemble(
+                        self.models, self.validation_scores, voting='soft', n_jobs=self.n_jobs
+                    )
+                    weighted_voting_clf.fit(X_train, y_train)
+                    self.models['weighted_voting'] = weighted_voting_clf
+                    self.evaluate_model(weighted_voting_clf, X_test, y_test, 'weighted_voting')
+
+                # Stacking classifier
+                stacking_clf = create_stacking_ensemble(
+                    self.models, meta_learner=None, cv=5, n_jobs=self.n_jobs
+                )
+                stacking_clf.fit(X_train, y_train)
+                self.models['stacking'] = stacking_clf
+                self.evaluate_model(stacking_clf, X_test, y_test, 'stacking')
+            except Exception as e:
+                print(f"Error creating ensemble models: {e}")
+
         # Plot results
         self.plot_confusion_matrices()
         

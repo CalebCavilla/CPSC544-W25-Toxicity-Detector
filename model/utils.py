@@ -57,7 +57,7 @@ xgb_param_dist = {
 
 lgbm_param_dist = {
     'n_estimators': randint(50, 500),
-    'max_depth': randint(3, 15),
+    'max_depth': randint(3, 1500),
     'learning_rate': loguniform(0.001, 0.5),
     'subsample': uniform(0.6, 0.4),
     'colsample_bytree': uniform(0.6, 0.4),
@@ -76,8 +76,7 @@ et_param_dist = {
 
 ada_param_dist = {
     'n_estimators': randint(50, 500),
-    'learning_rate': loguniform(0.001, 1),
-    'algorithm': ['SAMME', 'SAMME.R']
+    'learning_rate': loguniform(0.001, 1)
 }
 
 
