@@ -33,8 +33,8 @@ class OptimizedClassifierTrainer:
     
     def __init__(self, sample_fraction=SAMPLE_FRACTION, debug_mode=DEBUG_MODE, n_jobs=N_JOBS, random_state=RANDOM_STATE):
         """
-        Initialize the trainer.
-        
+        Init method.
+
         Args:
             sample_fraction: Fraction of data to use (0.0-1.0)
             debug_mode: If True, use smaller parameter spaces for faster testing
