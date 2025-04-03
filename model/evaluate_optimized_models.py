@@ -147,7 +147,7 @@ def plot_confusion_matrices(metrics):
     plt.show()
 
 
-def plot_best_model_performance(best_model, X_test, y_test, threshold):
+def plot_best_model_performance(best_model, X_test, y_test, threshold, best_model_name):
     """Plot ROC curve and confusion matrix for the best model."""
     # Get probability predictions
     y_probs = best_model.predict_proba(X_test)[:, 1]
@@ -157,7 +157,7 @@ def plot_best_model_performance(best_model, X_test, y_test, threshold):
     cm = confusion_matrix(y_test, y_pred)
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=['Not Toxic', 'Toxic'])
     disp.plot(cmap='Blues')
-    plt.title(f'Confusion Matrix - Random Forest\nThreshold: {threshold:.3f}')
+    plt.title(f'Confusion Matrix - {best_model_name.replace("_", " ").title()}\nThreshold: {threshold:.3f}')
     plt.savefig(SAVE_PATH / "best_model_confusion_matrix.png", dpi=300, bbox_inches='tight')
     plt.show()
 
@@ -244,7 +244,7 @@ def optimize_threshold(models, metrics, X_test, y_test):
         plt.savefig(SAVE_PATH / "roc_curve.png", dpi=300, bbox_inches='tight')
         plt.show()
 
-        plot_best_model_performance(best_model, X_test, y_test, best_threshold)
+        plot_best_model_performance(best_model, X_test, y_test, best_threshold, best_model_name)
         
         return best_threshold, best_f1, best_model_name, best_model
     else:
