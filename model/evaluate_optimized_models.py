@@ -6,7 +6,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
-from sklearn.metrics import classification_report, f1_score, precision_recall_curve, auc, roc_curve
+from sklearn.metrics import classification_report, f1_score, precision_recall_curve, auc, roc_curve, confusion_matrix, \
+    ConfusionMatrixDisplay
 
 os.environ['LOKY_MAX_CPU_COUNT'] = '8'
 
@@ -146,6 +147,24 @@ def plot_confusion_matrices(metrics):
     plt.show()
 
 
+def plot_best_model_performance(best_model, X_test, y_test, threshold):
+    """Plot ROC curve and confusion matrix for the best model."""
+    # Get probability predictions
+    y_probs = best_model.predict_proba(X_test)[:, 1]
+    y_pred = (y_probs >= threshold).astype(int)
+
+    # Confusion matrix
+    cm = confusion_matrix(y_test, y_pred)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=['Not Toxic', 'Toxic'])
+    disp.plot(cmap='Blues')
+    plt.title(f'Confusion Matrix - Random Forest\nThreshold: {threshold:.3f}')
+    plt.savefig(SAVE_PATH / "best_model_confusion_matrix.png", dpi=300, bbox_inches='tight')
+    plt.show()
+
+    print(f"Accuracy on test set: {best_model.score(X_test, y_test):.4f}")
+    print("\nClassification Report:")
+    print(classification_report(y_test, y_pred, target_names=['Not Toxic', 'Toxic']))
+
 def optimize_threshold(models, metrics, X_test, y_test):
     """Find optimal threshold to maximize F1 score for each model and return the best."""
     best_threshold = 0.5
@@ -224,6 +243,8 @@ def optimize_threshold(models, metrics, X_test, y_test):
         plt.grid(True)
         plt.savefig(SAVE_PATH / "roc_curve.png", dpi=300, bbox_inches='tight')
         plt.show()
+
+        plot_best_model_performance(best_model, X_test, y_test, best_threshold)
         
         return best_threshold, best_f1, best_model_name, best_model
     else:

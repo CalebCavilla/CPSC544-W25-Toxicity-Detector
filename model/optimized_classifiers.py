@@ -35,7 +35,7 @@ from model.utils import (
 
 # Configuration
 DEBUG_MODE = False  # Set to True for reduced parameter search
-SAMPLE_FRACTION = 0.2  # Fraction of data to use (0.0-1.0) todo: run with full data
+SAMPLE_FRACTION = 1.0  # Fraction of data to use (0.0-1.0)
 N_JOBS = -1  # Use all available cores
 SAVE_PATH = project_root / "model" / "saved_models"
 
