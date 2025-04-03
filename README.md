@@ -73,7 +73,7 @@ Our best model achieves:
 - F1 Score: 0.912
 - ROC-AUC: 0.995
 
-Feature importance analysis shows that TF-IDF features and sentiment scores contribute most significantly to classification accuracy.
+Feature importance analysis shows that Topic features and sentiment analysis contribute most significantly to classification accuracy.
 
 ## Usage
 
