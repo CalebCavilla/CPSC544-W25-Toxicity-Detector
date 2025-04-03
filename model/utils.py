@@ -7,6 +7,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.decomposition import PCA, LatentDirichletAllocation
 from imblearn.over_sampling import SMOTE, ADASYN, BorderlineSMOTE
 from imblearn.combine import SMOTETomek
+from imblearn.under_sampling import RandomUnderSampler
 
 # Random seed
 RANDOM_STATE = 42
@@ -56,12 +57,16 @@ xgb_param_dist = {
 }
 
 lgbm_param_dist = {
-    'n_estimators': randint(50, 500),
-    'max_depth': randint(3, 1500),
-    'learning_rate': loguniform(0.001, 0.5),
-    'subsample': uniform(0.6, 0.4),
-    'colsample_bytree': uniform(0.6, 0.4),
-    'num_leaves': randint(20, 200)
+    'n_estimators': [50, 100, 200],
+    'max_depth': [3, 6, 9],
+    'learning_rate': [0.01, 0.05, 0.1],
+    'subsample': [0.7, 0.8, 0.9],
+    'colsample_bytree': [0.7, 0.8, 0.9],
+    'num_leaves': [31, 63],
+    'min_child_samples': [20],
+    'reg_alpha': [0.01],
+    'reg_lambda': [0.01],
+    'verbose': [-1]  # Silence warnings
 }
 
 et_param_dist = {
@@ -87,11 +92,13 @@ def evaluate_smote_methods(X_train, y_train, X_test, y_test, random_state=RANDOM
         'smote': SMOTE(random_state=random_state),
         'borderline_smote': BorderlineSMOTE(random_state=random_state),
         'adasyn': ADASYN(random_state=random_state),
-        'smotetomek': SMOTETomek(random_state=random_state)
+        'smotetomek': SMOTETomek(random_state=random_state),
+        'undersample_1_1': RandomUnderSampler(sampling_strategy=1.0, random_state=random_state),  # 1:1 ratio
+        'undersample_2_1': RandomUnderSampler(sampling_strategy=0.5, random_state=random_state)   # 2:1 ratio (non-toxic:toxic)
     }
 
-    # Use 10% subset for quick evaluation
-    sample_size = min(5000, int(len(y_train) * 0.1))
+    # Use 20% subset (or 20K) for quick evaluation
+    sample_size = min(20000, int(len(y_train) * 0.2))
     indices = np.random.RandomState(random_state).choice(
         len(y_train), sample_size, replace=False,
         p=None if np.unique(y_train).size <= 1 else None

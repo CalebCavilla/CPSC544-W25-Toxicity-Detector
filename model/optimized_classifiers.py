@@ -20,6 +20,8 @@ from sklearn.model_selection import HalvingRandomSearchCV, train_test_split, Str
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 
+os.environ['LOKY_MAX_CPU_COUNT'] = '8'
+
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
@@ -35,7 +37,7 @@ from model.utils import (
 
 # Configuration
 DEBUG_MODE = False  # Set to True for reduced parameter search
-SAMPLE_FRACTION = 0.1  # Fraction of data to use (0.0-1.0)
+SAMPLE_FRACTION = 1.0  # Fraction of data to use (0.0-1.0)
 N_JOBS = -1  # Use all available cores
 SAVE_PATH = project_root / "model" / "saved_models"
 
@@ -189,7 +191,7 @@ class OptimizedClassifierTrainer:
         base_rf = RandomForestClassifier(random_state=self.random_state)
 
         # Make sure there are enough samples
-        min_samples = max(1000, int(len(y_train) * 0.1))  # At least 1000 samples or 10% of data
+        min_samples = 1500  # At least 1000 samples or 10% of data
 
         halving_search = HalvingRandomSearchCV(
             base_rf,
@@ -197,7 +199,7 @@ class OptimizedClassifierTrainer:
             factor=3,  # Reduce candidates by a factor of 3 at each iteration
             resource='n_samples',  # Use fraction of samples for efficiency
             min_resources=min_samples,  # Start with enough samples for reliable CV
-            max_resources='auto',  # Automatically determine max resources
+            max_resources=min(50000, len(X_train)),  # Use 50k or the full set if smaller
             cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state),
             n_jobs=self.n_jobs,
             random_state=self.random_state,
@@ -249,7 +251,7 @@ class OptimizedClassifierTrainer:
             param_dist = gb_param_dist
 
         base_gb = GradientBoostingClassifier(random_state=self.random_state)
-        min_samples = max(1000, int(len(y_train) * 0.1))
+        min_samples = 1500
 
         halving_search = HalvingRandomSearchCV(
             base_gb,
@@ -257,7 +259,7 @@ class OptimizedClassifierTrainer:
             factor=3,
             resource='n_samples',
             min_resources=min_samples,
-            max_resources='auto',
+            max_resources=min(50000, len(X_train)),
             cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state),
             n_jobs=self.n_jobs,
             random_state=self.random_state,
@@ -302,7 +304,7 @@ class OptimizedClassifierTrainer:
         param_dist = nb_param_dist
 
         base_nb = MultinomialNB()
-        min_samples = max(1000, int(len(y_train) * 0.1))
+        min_samples = 1500
 
         halving_search = HalvingRandomSearchCV(
             base_nb,
@@ -310,7 +312,7 @@ class OptimizedClassifierTrainer:
             factor=3,
             resource='n_samples',
             min_resources=min_samples,
-            max_resources='auto',
+            max_resources=min(50000, len(X_train)),
             cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state),
             n_jobs=self.n_jobs,
             random_state=self.random_state,
@@ -357,7 +359,7 @@ class OptimizedClassifierTrainer:
             param_dist = svm_param_dist
 
         base_svm = SVC(random_state=self.random_state)
-        min_samples = max(1000, int(len(y_train) * 0.1))
+        min_samples = 1500
 
         halving_search = HalvingRandomSearchCV(
             base_svm,
@@ -365,7 +367,7 @@ class OptimizedClassifierTrainer:
             factor=3,
             resource='n_samples',
             min_resources=min_samples,
-            max_resources='auto',
+            max_resources=min(50000, len(X_train)),
             cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state),
             n_jobs=self.n_jobs,
             random_state=self.random_state,
@@ -413,7 +415,7 @@ class OptimizedClassifierTrainer:
             param_dist = xgb_param_dist
 
         base_xgb = XGBClassifier(random_state=self.random_state)
-        min_samples = max(1000, int(len(y_train) * 0.1))
+        min_samples = 1500
 
         halving_search = HalvingRandomSearchCV(
             base_xgb,
@@ -421,7 +423,7 @@ class OptimizedClassifierTrainer:
             factor=3,
             resource='n_samples',
             min_resources=min_samples,
-            max_resources='auto',
+            max_resources=min(50000, len(X_train)),
             cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state),
             n_jobs=self.n_jobs,
             random_state=self.random_state,
@@ -472,7 +474,7 @@ class OptimizedClassifierTrainer:
             param_dist = lgbm_param_dist
 
         base_lgbm = LGBMClassifier(random_state=self.random_state)
-        min_samples = max(1000, int(len(y_train) * 0.1))
+        min_samples = 1500
 
         halving_search = HalvingRandomSearchCV(
             base_lgbm,
@@ -480,7 +482,7 @@ class OptimizedClassifierTrainer:
             factor=3,
             resource='n_samples',
             min_resources=min_samples,
-            max_resources='auto',
+            max_resources=min(50000, len(X_train)),
             cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state),
             n_jobs=self.n_jobs,
             random_state=self.random_state,
@@ -532,7 +534,7 @@ class OptimizedClassifierTrainer:
             param_dist = et_param_dist
 
         base_et = ExtraTreesClassifier(random_state=self.random_state)
-        min_samples = max(1000, int(len(y_train) * 0.1))
+        min_samples = 1500
 
         halving_search = HalvingRandomSearchCV(
             base_et,
@@ -540,7 +542,7 @@ class OptimizedClassifierTrainer:
             factor=3,
             resource='n_samples',
             min_resources=min_samples,
-            max_resources='auto',
+            max_resources=min(50000, len(X_train)),
             cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state),
             n_jobs=self.n_jobs,
             random_state=self.random_state,
@@ -588,7 +590,7 @@ class OptimizedClassifierTrainer:
             param_dist = ada_param_dist
 
         base_ada = AdaBoostClassifier(random_state=self.random_state)
-        min_samples = max(1000, int(len(y_train) * 0.1))
+        min_samples = 1500
 
         halving_search = HalvingRandomSearchCV(
             base_ada,
@@ -596,7 +598,7 @@ class OptimizedClassifierTrainer:
             factor=3,
             resource='n_samples',
             min_resources=min_samples,
-            max_resources='auto',
+            max_resources=min(50000, len(X_train)),
             cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state),
             n_jobs=self.n_jobs,
             random_state=self.random_state,

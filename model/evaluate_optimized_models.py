@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 import pandas as pd
@@ -6,6 +7,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
 from sklearn.metrics import classification_report, f1_score, precision_recall_curve, auc, roc_curve
+
+os.environ['LOKY_MAX_CPU_COUNT'] = '8'
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
