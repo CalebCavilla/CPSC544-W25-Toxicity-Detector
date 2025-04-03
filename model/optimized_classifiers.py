@@ -146,13 +146,12 @@ class OptimizedClassifierTrainer:
         # Determine best resampling method if not specified
         if self.resampling_method is None:
             print("\nEvaluating resampling methods...")
-            _, best_method = evaluate_smote_methods(X_train, y_train, X_test, y_test, self.random_state)
+            _, best_method, self.resampler = evaluate_smote_methods(X_train, y_train, X_test, y_test, self.random_state)
             self.resampling_method = best_method
 
         # Apply resampling to training data if a method is specified and it's not 'original'
         if self.resampling_method and self.resampling_method != 'original':
             print(f"\nApplying {self.resampling_method} resampling...")
-            self.resampler = SMOTE(random_state=self.random_state)
             X_train, y_train = self.resampler.fit_resample(X_train, y_train)
 
             print(f"After resampling - Train set: {X_train.shape}")

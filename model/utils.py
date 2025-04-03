@@ -124,9 +124,10 @@ def evaluate_smote_methods(X_train, y_train, X_test, y_test, random_state=RANDOM
         print(f"{name} - F1: {f1:.4f}, Shape: {X_res.shape}, Pos/Neg: {np.bincount(y_res)}")
 
     best_method = max(results.items(), key=lambda x: x[1]['f1_score'])[0]
+    best_method_obj = methods[best_method]
     print(f"\nBest method: {best_method} with F1: {results[best_method]['f1_score']:.4f}")
 
-    return results, best_method
+    return results, best_method, best_method_obj
 
 
 def apply_dimensionality_reduction(X_train, X_test, method='pca', n_components=None):
@@ -154,7 +155,11 @@ def create_stacking_ensemble(base_models, meta_learner=None, cv=5, n_jobs=-1):
     if meta_learner is None:
         meta_learner = LogisticRegression(max_iter=1000)
 
-    estimators = [(name, model) for name, model in base_models.items()]
+    # Filter out any models that would cause naming conflicts
+    filtered_models = {name: model for name, model in base_models.items()
+                      if name not in ['voting', 'weighted_voting', 'stacking']}
+
+    estimators = [(name, model) for name, model in filtered_models.items()]
 
     stacking = StackingClassifier(
         estimators=estimators,
@@ -171,7 +176,11 @@ def create_weighted_voting_ensemble(base_models, validation_scores, voting='soft
     """Create a weighted voting ensemble based on validation scores"""
     from sklearn.ensemble import VotingClassifier
 
-    estimators = [(name, model) for name, model in base_models.items()]
+    # Filter out any models that would cause naming conflicts
+    filtered_models = {name: model for name, model in base_models.items() 
+                      if name not in ['voting', 'weighted_voting', 'stacking']}
+
+    estimators = [(name, model) for name, model in filtered_models.items()]
     weights = [validation_scores.get(name, 1.0) for name, _ in estimators]
 
     voting = VotingClassifier(

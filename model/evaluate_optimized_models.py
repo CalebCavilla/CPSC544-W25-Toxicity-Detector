@@ -161,12 +161,15 @@ def optimize_threshold(model, X_test, y_test):
         # Find threshold with max F1
         optimal_idx = np.argmax(f1_scores)
         optimal_threshold = thresholds[optimal_idx] if optimal_idx < len(thresholds) else 0.5
+        best_f1 = f1_scores[optimal_idx]
+        
+        print(f"Optimal threshold: {optimal_threshold:.3f} with F1 score: {best_f1:.3f}")
 
         # Plot precision-recall curve
         plt.figure(figsize=(10, 6))
         plt.plot(recalls, precisions, 'b-', label='Precision-Recall curve')
         plt.plot(recalls[optimal_idx], precisions[optimal_idx], 'ro',
-                 label=f'Optimal threshold: {optimal_threshold:.3f}, F1: {f1_scores[optimal_idx]:.3f}')
+                 label=f'Optimal threshold: {optimal_threshold:.3f}, F1: {best_f1:.3f}')
         plt.xlabel('Recall')
         plt.ylabel('Precision')
         plt.title('Precision-Recall Curve - Threshold Optimization')
@@ -190,7 +193,13 @@ def optimize_threshold(model, X_test, y_test):
         plt.savefig(SAVE_PATH / "roc_curve.png", dpi=300, bbox_inches='tight')
         plt.show()
 
-        return optimal_threshold, f1_scores[optimal_idx]
+        # Calculate error counts at optimal threshold
+        y_pred = (y_probs >= optimal_threshold).astype(int)
+        fp = np.sum((y_test == 0) & (y_pred == 1))
+        fn = np.sum((y_test == 1) & (y_pred == 0))
+        print(f"At threshold={optimal_threshold:.3f}: False Positives: {fp}, False Negatives: {fn}")
+
+        return optimal_threshold, best_f1
 
     except Exception as e:
         print(f"Error optimizing threshold: {e}")
@@ -375,12 +384,9 @@ def main(custom_threshold=None):
             y_df = pd.read_csv(target_path, nrows=5000)
             y_test = y_df['toxic']
 
-            print("\nEvaluating model performance across different thresholds...")
-            threshold_df = threshold_evaluation(best_model, X_test, y_test)
-
             print("\nFinding optimal threshold...")
-            optimal_threshold, _ = optimize_threshold(best_model, X_test, y_test)
-
+            optimal_threshold, best_f1 = optimize_threshold(best_model, X_test, y_test)
+            
             # Use custom threshold if provided, otherwise use the optimized one
             threshold = custom_threshold if custom_threshold is not None else optimal_threshold
 
