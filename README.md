@@ -69,9 +69,9 @@ Our evaluation shows that ensemble approaches generally outperform individual mo
 ## Results
 
 Our best model achieves:
-- Accuracy: 92%
-- F1 Score: 0.89
-- ROC-AUC: 0.95
+- Accuracy: 96.82%
+- F1 Score: 0.912
+- ROC-AUC: 0.995
 
 Feature importance analysis shows that TF-IDF features and sentiment scores contribute most significantly to classification accuracy.
 
