@@ -17,7 +17,7 @@ def main():
     
     # Set file paths for the features and target CSV files
     features_file = project_root / "data" / "features_DEMO.csv"
-    target_file = project_root / "data" / "train.csv"
+    target_file = project_root / "data" / "DEMO_train.csv"
     
     # Print file paths for confirmation
     print(f"Using features file: {features_file}")
@@ -28,7 +28,8 @@ def main():
         features_path=str(features_file),
         target_path=str(target_file),
         threshold_value=0.01,
-        correlation_threshold=0.4
+        correlation_threshold=0.4,
+        TARGET="severe_toxic"
     )
     
     # Run the full regularization pipeline
