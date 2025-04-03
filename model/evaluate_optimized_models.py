@@ -146,33 +146,65 @@ def plot_confusion_matrices(metrics):
     plt.show()
 
 
-def optimize_threshold(model, X_test, y_test):
-    """Find optimal threshold to maximize F1 score."""
-    # Get probability predictions
-    try:
-        y_probs = model.predict_proba(X_test)[:, 1]
+def optimize_threshold(models, metrics, X_test, y_test):
+    """Find optimal threshold to maximize F1 score for each model and return the best."""
+    best_threshold = 0.5
+    best_f1 = 0.0
+    best_model_name = None
+    best_model = None
+    
+    # Try each model to find the one with the best optimized threshold
+    for model_name, model in models.items():
+        try:
+            # Get probability predictions
+            y_probs = model.predict_proba(X_test)[:, 1]
 
-        # Calculate precision, recall, and F1 for different thresholds
-        precisions, recalls, thresholds = precision_recall_curve(y_test, y_probs)
+            # Calculate precision, recall, and F1 for different thresholds
+            precisions, recalls, thresholds = precision_recall_curve(y_test, y_probs)
 
-        # Calculate F1 scores for each threshold
-        f1_scores = 2 * (precisions * recalls) / (precisions + recalls + 1e-9)
+            # Calculate F1 scores for each threshold
+            f1_scores = 2 * (precisions * recalls) / (precisions + recalls + 1e-9)
 
-        # Find threshold with max F1
-        optimal_idx = np.argmax(f1_scores)
-        optimal_threshold = thresholds[optimal_idx] if optimal_idx < len(thresholds) else 0.5
-        best_f1 = f1_scores[optimal_idx]
+            # Find threshold with max F1
+            optimal_idx = np.argmax(f1_scores)
+            optimal_threshold = thresholds[optimal_idx] if optimal_idx < len(thresholds) else 0.5
+            model_best_f1 = f1_scores[optimal_idx]
+            
+            print(f"Model {model_name}: Optimal threshold: {optimal_threshold:.3f} with F1 score: {model_best_f1:.3f}")
+            
+            # Update if this is the best model+threshold combination
+            if model_best_f1 > best_f1:
+                best_f1 = model_best_f1
+                best_threshold = optimal_threshold
+                best_model_name = model_name
+                best_model = model
+                
+        except Exception as e:
+            print(f"Error optimizing threshold for {model_name}: {e}")
+            continue
+    
+    if best_model is not None:
+        print(f"\nBest model found: {best_model_name} with optimal threshold: {best_threshold:.3f} and F1 score: {best_f1:.3f}")
         
-        print(f"Optimal threshold: {optimal_threshold:.3f} with F1 score: {best_f1:.3f}")
-
-        # Plot precision-recall curve
+        # Calculate error counts for best model
+        y_probs = best_model.predict_proba(X_test)[:, 1]
+        y_pred = (y_probs >= best_threshold).astype(int)
+        fp = np.sum((y_test == 0) & (y_pred == 1))
+        fn = np.sum((y_test == 1) & (y_pred == 0))
+        print(f"At threshold={best_threshold:.3f}: False Positives: {fp}, False Negatives: {fn}")
+        
+        # Plot precision-recall curve for best model
+        precisions, recalls, thresholds = precision_recall_curve(y_test, y_probs)
+        f1_scores = 2 * (precisions * recalls) / (precisions + recalls + 1e-9)
+        optimal_idx = np.argmax(f1_scores)
+        
         plt.figure(figsize=(10, 6))
         plt.plot(recalls, precisions, 'b-', label='Precision-Recall curve')
         plt.plot(recalls[optimal_idx], precisions[optimal_idx], 'ro',
-                 label=f'Optimal threshold: {optimal_threshold:.3f}, F1: {best_f1:.3f}')
+                 label=f'Optimal threshold: {best_threshold:.3f}, F1: {best_f1:.3f}')
         plt.xlabel('Recall')
         plt.ylabel('Precision')
-        plt.title('Precision-Recall Curve - Threshold Optimization')
+        plt.title(f'Precision-Recall Curve - {best_model_name}')
         plt.legend(loc='best')
         plt.grid(True)
         plt.savefig(SAVE_PATH / "threshold_optimization.png", dpi=300, bbox_inches='tight')
@@ -187,26 +219,19 @@ def optimize_threshold(model, X_test, y_test):
         plt.plot([0, 1], [0, 1], 'k--')
         plt.xlabel('False Positive Rate')
         plt.ylabel('True Positive Rate')
-        plt.title('ROC Curve')
+        plt.title(f'ROC Curve - {best_model_name}')
         plt.legend(loc='best')
         plt.grid(True)
         plt.savefig(SAVE_PATH / "roc_curve.png", dpi=300, bbox_inches='tight')
         plt.show()
-
-        # Calculate error counts at optimal threshold
-        y_pred = (y_probs >= optimal_threshold).astype(int)
-        fp = np.sum((y_test == 0) & (y_pred == 1))
-        fn = np.sum((y_test == 1) & (y_pred == 0))
-        print(f"At threshold={optimal_threshold:.3f}: False Positives: {fp}, False Negatives: {fn}")
-
-        return optimal_threshold, best_f1
-
-    except Exception as e:
-        print(f"Error optimizing threshold: {e}")
-        return 0.5, None
+        
+        return best_threshold, best_f1, best_model_name, best_model
+    else:
+        print("Could not find optimal threshold for any model")
+        return 0.5, None, None, None
 
 
-def demo_model_usage(threshold=0.5):
+def demo_model_usage(threshold=0.5, best_model_name=None, best_f1=None):
     """Demonstrate how to use the best model for prediction with adjustable threshold."""
     print(f"\n=== Model Usage Demo (Threshold: {threshold:.3f}) ===")
 
@@ -217,9 +242,16 @@ def demo_model_usage(threshold=0.5):
     
     # Find best model based on F1 score
     try:
-        best_model_name = max(metrics.items(), key=lambda x: x[1]['f1'])[0]
-        best_model = models.get(best_model_name)
-        best_score = metrics[best_model_name]['f1']
+        # If we have a best model name from threshold optimization, use it
+        if best_model_name and best_model_name in models:
+            best_model = models.get(best_model_name)
+            best_score = best_f1 if best_f1 else metrics[best_model_name]['f1']
+        else:
+            # Fall back to the original method
+            best_model_name = max(metrics.items(), key=lambda x: x[1]['f1'])[0]
+            best_model = models.get(best_model_name)
+            best_score = metrics[best_model_name]['f1']
+        
         print(f"Best model found: {best_model_name} with F1 score: {best_score:.4f}")
     except (KeyError, ValueError) as e:
         print(f"Error finding best model: {e}")
@@ -369,10 +401,6 @@ def main(custom_threshold=None):
     print("\nPlotting evaluation results...")
     plot_evaluation_results(metrics)
 
-    # Find best model
-    best_model_name = max(metrics.items(), key=lambda x: x[1]['f1'])[0]
-    best_model = models.get(best_model_name)
-
     # Load test data for threshold optimization
     features_path = project_root / "data" / "features_train.csv"
     target_path = project_root / "data" / "train.csv"
@@ -385,13 +413,13 @@ def main(custom_threshold=None):
             y_test = y_df['toxic']
 
             print("\nFinding optimal threshold...")
-            optimal_threshold, best_f1 = optimize_threshold(best_model, X_test, y_test)
+            optimal_threshold, best_f1, best_model_name, best_model = optimize_threshold(models, metrics, X_test, y_test)
             
             # Use custom threshold if provided, otherwise use the optimized one
             threshold = custom_threshold if custom_threshold is not None else optimal_threshold
 
-            # Demo with optimal threshold
-            demo_model_usage(threshold=threshold)
+            # Demo with optimal threshold and best model
+            demo_model_usage(threshold=threshold, best_model_name=best_model_name, best_f1=best_f1)
         except Exception as e:
             print(f"Error during threshold optimization: {e}")
             # Fall back to default threshold
