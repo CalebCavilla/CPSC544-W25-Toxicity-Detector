@@ -100,10 +100,11 @@ def main():
 
         # Initialize regularization
         reg = Regularization(
-        features_path=str(temp_features_path),
-        target_path=str(train_file),
-        threshold_value=0.02,  # Increased threshold to select fewer features
-        correlation_threshold=0.5  # Increased threshold for more aggressive filtering
+            features_path=str(temp_features_path),
+            target_path=str(train_file),
+            threshold_value=0.02,  # Increased threshold to select fewer features
+            correlation_threshold=0.5,  # Increased threshold for more aggressive filtering
+            TARGET="toxic"  # Change to whatever target you want to use
         )
 
         # Apply regularization
