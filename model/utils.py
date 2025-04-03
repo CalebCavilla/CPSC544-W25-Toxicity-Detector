@@ -33,11 +33,6 @@ gb_param_dist = {
     'max_features': ['sqrt', 'log2', None]
 }
 
-nb_param_dist = {
-    'alpha': loguniform(1e-5, 10),
-    'fit_prior': [True, False]
-}
-
 svm_param_dist = {
     'C': loguniform(0.1, 100),
     'gamma': loguniform(1e-5, 1),

@@ -7,14 +7,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
-from imblearn.over_sampling import SMOTE
 from sklearn.ensemble import (
     RandomForestClassifier, GradientBoostingClassifier, VotingClassifier,
     AdaBoostClassifier, ExtraTreesClassifier
 )
 from sklearn.svm import SVC
 from sklearn.metrics import classification_report, confusion_matrix, f1_score, roc_auc_score, accuracy_score
-from sklearn.naive_bayes import MultinomialNB
 from sklearn.experimental import enable_halving_search_cv
 from sklearn.model_selection import HalvingRandomSearchCV, train_test_split, StratifiedKFold
 from xgboost import XGBClassifier
@@ -28,7 +26,7 @@ sys.path.append(str(project_root))
 
 # Import utilities
 from model.utils import (
-    rf_param_dist, gb_param_dist, nb_param_dist, svm_param_dist,
+    rf_param_dist, gb_param_dist, svm_param_dist,
     xgb_param_dist, lgbm_param_dist, et_param_dist, ada_param_dist,
     evaluate_smote_methods, apply_dimensionality_reduction,
     create_stacking_ensemble, create_weighted_voting_ensemble,
@@ -281,56 +279,6 @@ class OptimizedClassifierTrainer:
             self.feature_importances['gradient_boosting'] = best_gb.feature_importances_
         
         return best_gb
-    
-    def optimize_multinomial_nb(self, X_train, y_train):
-        """
-        Optimize a Multinomial Naive Bayes classifier using HalvingRandomSearchCV.
-        
-        Args:
-            X_train: Training feature matrix
-            y_train: Training target vector
-            
-        Returns:
-            Optimized Naive Bayes classifier
-        """
-        print("\nOptimizing Multinomial Naive Bayes...")
-        start_time = time.time()
-
-        # Ensure no negative values for Naive Bayes (cheap workaround)
-        X_train_nb = X_train.copy()
-        X_train_nb[X_train_nb < 0] = 0
-
-        param_dist = nb_param_dist
-
-        base_nb = MultinomialNB()
-        min_samples = 1500
-
-        halving_search = HalvingRandomSearchCV(
-            base_nb,
-            param_distributions=param_dist,
-            factor=3,
-            resource='n_samples',
-            min_resources=min_samples,
-            max_resources=min(50000, len(X_train)),
-            cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state),
-            n_jobs=self.n_jobs,
-            random_state=self.random_state,
-            verbose=1,
-            scoring='f1'
-        )
-
-        halving_search.fit(X_train_nb, y_train)
-        best_nb = halving_search.best_estimator_
-        elapsed_time = time.time() - start_time
-        
-        print(f"\nMultinomial Naive Bayes optimization completed in {elapsed_time:.2f} seconds")
-        print(f"Best parameters: {halving_search.best_params_}")
-        print(f"Best F1 score: {halving_search.best_score_:.4f}")
-        
-        self.models['naive_bayes'] = best_nb
-        self.validation_scores['naive_bayes'] = halving_search.best_score_
-
-        return best_nb
 
     def optimize_svm(self, X_train, y_train):
         """
@@ -628,10 +576,6 @@ class OptimizedClassifierTrainer:
 
         print("\nCreating Voting Classifier...")
 
-        # Handle Naive Bayes separately - don't include in voting classifier because of negative values
-        has_naive_bayes = 'naive_bayes' in self.models
-        nb_model = self.models.pop('naive_bayes') if has_naive_bayes else None
-
         # Create a list of tuples (name, model) for the voting classifier
         estimators = [(name, model) for name, model in self.models.items()]
 
@@ -641,10 +585,6 @@ class OptimizedClassifierTrainer:
             n_jobs=self.n_jobs
         )
 
-        # Add Naive Bayes back to models if it was present
-        if has_naive_bayes:
-            self.models['naive_bayes'] = nb_model
-
         print(f"Voting Classifier created with models: {[name for name, _ in estimators]}")
 
         return voting_clf
@@ -653,12 +593,7 @@ class OptimizedClassifierTrainer:
         """Evaluate a model on test data."""
         print(f"\nEvaluating {model_name}...")
 
-        # Handle Naive Bayes - ensure no negative values
-        if model_name == 'naive_bayes':
-            X_test_eval = X_test.copy()
-            X_test_eval[X_test_eval < 0] = 0
-        else:
-            X_test_eval = X_test
+        X_test_eval = X_test
 
         y_pred = model.predict(X_test_eval)
         metrics = {
@@ -865,7 +800,6 @@ class OptimizedClassifierTrainer:
         all_models = {
             'random_forest': self.optimize_random_forest,
             'gradient_boosting': self.optimize_gradient_boosting,
-            'naive_bayes': self.optimize_multinomial_nb,
             'svm': self.optimize_svm,
             'xgboost': self.optimize_xgboost,
             'lightgbm': self.optimize_lightgbm,
@@ -894,13 +828,7 @@ class OptimizedClassifierTrainer:
                     print(f"\nTraining {model_name}...")
                     model_trainer = all_models[model_name]
 
-                    # Handle Naive Bayes separately (replace negatives with zeros)
-                    if model_name == 'naive_bayes':
-                        X_train_nb = X_train.copy()
-                        X_train_nb[X_train_nb < 0] = 0
-                        model = model_trainer(X_train_nb, y_train)
-                    else:
-                        model = model_trainer(X_train, y_train)
+                    model = model_trainer(X_train, y_train)
 
                     # Evaluate the model
                     self.evaluate_model(model, X_test, y_test, model_name)
